@@ -77,7 +77,7 @@ public class TrajectorySimulator {
             }
 
             // ── Entity collision ─────────────────────────────────────────────────
-            AABB scanBox = new AABB(nextPos).inflate(0.3);
+            AABB scanBox = new AABB(nextPos, nextPos).inflate(0.3);
             List<Entity> nearby = level.getEntities(
                     excludePlayer, scanBox,
                     e -> e.isAlive() && !(e instanceof ExperienceOrb)
@@ -88,7 +88,7 @@ public class TrajectorySimulator {
             }
 
             // ── Void ─────────────────────────────────────────────────────────────
-            if (nextPos.y < level.getMinBuildHeight() - 16.0) {
+            if (nextPos.y < level.getMinY() - 16.0) {
                 return new SimResult(points, false);
             }
 
