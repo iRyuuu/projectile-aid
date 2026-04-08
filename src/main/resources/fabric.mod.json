@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "projectile-aid",
+  "version": "${version}",
+  "name": "Projectile Aid",
+  "description": "Visualises the trajectory of any held projectile in real time.",
+  "authors": [
+    "TDumitrescu"
+  ],
+  "contact": {
+    "sources": "https://github.com/TDumitrescu/projectile-aid"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.projectileaid.ProjectileAidClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.1",
+    "fabric-api": "*",
+    "minecraft": "~1.21.11"
+  }
+}
