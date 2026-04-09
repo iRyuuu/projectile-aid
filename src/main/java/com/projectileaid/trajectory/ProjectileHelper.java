@@ -117,12 +117,10 @@ public class ProjectileHelper {
     private static boolean hasEnchantment(ItemStack stack, String pathName) {
         ItemEnchantments enchants = stack.get(DataComponents.ENCHANTMENTS);
         if (enchants == null) return false;
+        net.minecraft.resources.ResourceLocation target =
+                net.minecraft.resources.ResourceLocation.withDefaultNamespace(pathName);
         for (var entry : enchants.entrySet()) {
-            if (entry.getKey().unwrapKey()
-                    .filter(k -> k.getValue().getPath().equals(pathName))
-                    .isPresent()) {
-                return true;
-            }
+            if (entry.getKey().is(target)) return true;
         }
         return false;
     }
