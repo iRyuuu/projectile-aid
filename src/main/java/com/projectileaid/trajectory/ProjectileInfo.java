@@ -1,19 +1,24 @@
 package com.projectileaid.trajectory;
 
 /**
- * Physics parameters and visual category for a projectile type.
+ * Physics parameters and visual type for a projectile.
  *
- * @param speed    initial launch speed (blocks/tick)
- * @param gravity  downward acceleration per tick (blocks/tick²)
- * @param drag     velocity multiplier per tick (0–1, applied before gravity)
- * @param category COMBAT (bow/crossbow/trident) or UTILITY (throwables/pearls)
+ * @param speed       initial launch speed (blocks/tick)
+ * @param gravity     downward acceleration per tick (blocks/tick²)
+ * @param drag        velocity multiplier per tick (0–1, applied before gravity)
+ * @param projectileType which projectile type this is (drives config colour lookup)
  */
-public record ProjectileInfo(float speed, float gravity, float drag, ProjectileCategory category) {
+public record ProjectileInfo(float speed, float gravity, float drag, ProjectileType projectileType) {
 
-    public enum ProjectileCategory {
-        /** Bow, crossbow (arrow), trident — red on mob hit, white otherwise. */
-        COMBAT,
-        /** Snowball, egg, ender pearl, potions — shows configurable colour + landing block. */
-        UTILITY
+    public enum ProjectileType {
+        BOW,
+        CROSSBOW_ARROW,
+        CROSSBOW_FIREWORK,
+        TRIDENT,
+        /** Snowball, egg, ender pearl */
+        SNOWBALL,
+        /** Splash potion, lingering potion */
+        POTION,
+        XP_BOTTLE
     }
 }

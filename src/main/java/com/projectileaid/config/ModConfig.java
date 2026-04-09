@@ -2,6 +2,7 @@ package com.projectileaid.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.projectileaid.trajectory.ProjectileInfo.ProjectileType;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.*;
@@ -11,6 +12,7 @@ import java.nio.file.Path;
 /**
  * Persistent configuration for Projectile Aid.
  * Saved as JSON in the Fabric config directory.
+ * Each projectile type has its own RGB trail colour.
  */
 public class ModConfig {
 
@@ -20,19 +22,17 @@ public class ModConfig {
 
     private static ModConfig INSTANCE = new ModConfig();
 
-    // ── Combat weapon colours (bow / crossbow arrow / trident) ────────────────
-    /** Trail + outline colour when a combat projectile will hit a mob. */
-    public int combatHitR = 255, combatHitG = 0,   combatHitB = 0;   // red
-    /** Trail + outline colour when a combat projectile will NOT hit a mob. */
-    public int combatMissR = 255, combatMissG = 255, combatMissB = 255; // white
-
-    // ── Utility projectile colour (pearl / snowball / potions / xp bottle) ───
-    public int utilityR = 0, utilityG = 220, utilityB = 80;            // green
+    // ── Per-projectile trail colours (RGB 0–255) ──────────────────────────────
+    public int bowR = 0,   bowG = 220,  bowB = 80;       // green
+    public int cbArrowR = 0,   cbArrowG = 200,  cbArrowB = 255;  // cyan
+    public int cbFireworkR = 255, cbFireworkG = 140, cbFireworkB = 0;  // orange
+    public int tridentR = 30,  tridentG = 100,  tridentB = 255;  // blue
+    public int snowballR = 180, snowballG = 220, snowballB = 255; // light blue
+    public int potionR = 200,  potionG = 0,    potionB = 255;   // purple
+    public int xpBottleR = 255, xpBottleG = 230, xpBottleB = 0;  // yellow
 
     // ── Shared ────────────────────────────────────────────────────────────────
-    /** Alpha for the trail line (0–255). */
-    public int trailAlpha = 200;
-    /** Alpha for the landing outline (0–255). */
+    public int trailAlpha   = 200;
     public int outlineAlpha = 255;
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -57,6 +57,19 @@ public class ModConfig {
             GSON.toJson(INSTANCE, writer);
         } catch (IOException ignored) {
         }
+    }
+
+    /** Returns [R, G, B] for the given projectile type. */
+    public int[] colorFor(ProjectileType type) {
+        return switch (type) {
+            case BOW              -> new int[]{bowR,        bowG,        bowB};
+            case CROSSBOW_ARROW   -> new int[]{cbArrowR,    cbArrowG,    cbArrowB};
+            case CROSSBOW_FIREWORK-> new int[]{cbFireworkR, cbFireworkG, cbFireworkB};
+            case TRIDENT          -> new int[]{tridentR,    tridentG,    tridentB};
+            case SNOWBALL         -> new int[]{snowballR,   snowballG,   snowballB};
+            case POTION           -> new int[]{potionR,     potionG,     potionB};
+            case XP_BOTTLE        -> new int[]{xpBottleR,   xpBottleG,   xpBottleB};
+        };
     }
 
     /** Packs R, G, B, A into a single ARGB int for use with GuiGraphics.fill(). */

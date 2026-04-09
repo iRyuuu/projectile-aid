@@ -16,6 +16,9 @@ import java.util.List;
  * Maps a held ItemStack to one or more TrajectorySpecs to simulate.
  * Returns an empty list if the held item does not launch a projectile.
  *
+ * The trail starts from an approximated hand position (slightly right and
+ * below the eye) rather than the exact eye/crosshair point.
+ *
  * Multishot crossbows return three specs (spread ±10° in the horizontal plane).
  */
 public class ProjectileHelper {
@@ -23,8 +26,8 @@ public class ProjectileHelper {
     public static List<TrajectorySpec> getTrajectories(ItemStack stack, LocalPlayer player) {
         if (stack.isEmpty()) return Collections.emptyList();
         Item item = stack.getItem();
-        Vec3 startPos = player.getEyePosition();
         Vec3 look = player.getLookAngle();
+        Vec3 handPos = handPosition(player, look);
 
         // ── Bow ───────────────────────────────────────────────────────────────
         if (item instanceof BowItem) {
@@ -36,8 +39,8 @@ public class ProjectileHelper {
             } else {
                 power = 1.0f; // preview at full power when idle
             }
-            return single(startPos, look.scale(3.0f * power), 0.05f, 0.99f,
-                    ProjectileInfo.ProjectileCategory.COMBAT);
+            return single(handPos, look.scale(3.0f * power), 0.05f, 0.99f,
+                    ProjectileInfo.ProjectileType.BOW);
         }
 
         // ── Crossbow ──────────────────────────────────────────────────────────
@@ -47,8 +50,8 @@ public class ProjectileHelper {
 
             // Firework rocket
             if (charged.getItems().stream().anyMatch(s -> s.is(Items.FIREWORK_ROCKET))) {
-                return single(startPos, look.scale(1.6f), 0.0f, 0.95f,
-                        ProjectileInfo.ProjectileCategory.COMBAT);
+                return single(handPos, look.scale(1.6f), 0.0f, 0.95f,
+                        ProjectileInfo.ProjectileType.CROSSBOW_FIREWORK);
             }
 
             // Check for Multishot enchantment
@@ -57,37 +60,37 @@ public class ProjectileHelper {
                 List<TrajectorySpec> specs = new ArrayList<>(3);
                 for (int deg : new int[]{-10, 0, 10}) {
                     specs.add(new TrajectorySpec(
-                            startPos, rotateAroundY(look, deg).scale(3.15f),
-                            0.05f, 0.99f, ProjectileInfo.ProjectileCategory.COMBAT));
+                            handPos, rotateAroundY(look, deg).scale(3.15f),
+                            0.05f, 0.99f, ProjectileInfo.ProjectileType.CROSSBOW_ARROW));
                 }
                 return specs;
             }
-            return single(startPos, look.scale(3.15f), 0.05f, 0.99f,
-                    ProjectileInfo.ProjectileCategory.COMBAT);
+            return single(handPos, look.scale(3.15f), 0.05f, 0.99f,
+                    ProjectileInfo.ProjectileType.CROSSBOW_ARROW);
         }
 
         // ── Trident ───────────────────────────────────────────────────────────
         if (stack.is(Items.TRIDENT)) {
-            return single(startPos, look.scale(2.5f), 0.05f, 0.99f,
-                    ProjectileInfo.ProjectileCategory.COMBAT);
+            return single(handPos, look.scale(2.5f), 0.05f, 0.99f,
+                    ProjectileInfo.ProjectileType.TRIDENT);
         }
 
         // ── Common throwables ─────────────────────────────────────────────────
         if (stack.is(Items.SNOWBALL) || stack.is(Items.EGG) || stack.is(Items.ENDER_PEARL)) {
-            return single(startPos, look.scale(1.5f), 0.03f, 0.99f,
-                    ProjectileInfo.ProjectileCategory.UTILITY);
+            return single(handPos, look.scale(1.5f), 0.03f, 0.99f,
+                    ProjectileInfo.ProjectileType.SNOWBALL);
         }
 
         // ── Throwable potions ─────────────────────────────────────────────────
         if (stack.is(Items.SPLASH_POTION) || stack.is(Items.LINGERING_POTION)) {
-            return single(startPos, look.scale(0.5f), 0.03f, 0.99f,
-                    ProjectileInfo.ProjectileCategory.UTILITY);
+            return single(handPos, look.scale(0.5f), 0.03f, 0.99f,
+                    ProjectileInfo.ProjectileType.POTION);
         }
 
         // ── Experience bottle ─────────────────────────────────────────────────
         if (stack.is(Items.EXPERIENCE_BOTTLE)) {
-            return single(startPos, look.scale(0.7f), 0.03f, 0.99f,
-                    ProjectileInfo.ProjectileCategory.UTILITY);
+            return single(handPos, look.scale(0.7f), 0.03f, 0.99f,
+                    ProjectileInfo.ProjectileType.XP_BOTTLE);
         }
 
         return Collections.emptyList();
@@ -102,11 +105,29 @@ public class ProjectileHelper {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * Approximates the world-space position of the player's right hand.
+     * Offset: ~0.35 blocks to the right of look direction, ~0.4 blocks below eye.
+     */
+    private static Vec3 handPosition(LocalPlayer player, Vec3 look) {
+        Vec3 eye = player.getEyePosition();
+        // Horizontal right-perpendicular to look direction
+        double rightX = -look.z;
+        double rightZ = look.x;
+        double len = Math.sqrt(rightX * rightX + rightZ * rightZ);
+        if (len > 1e-6) { rightX /= len; rightZ /= len; }
+        return new Vec3(
+                eye.x + rightX * 0.35,
+                eye.y - 0.4,
+                eye.z + rightZ * 0.35
+        );
+    }
+
     private static List<TrajectorySpec> single(
             Vec3 pos, Vec3 vel, float gravity, float drag,
-            ProjectileInfo.ProjectileCategory cat
+            ProjectileInfo.ProjectileType type
     ) {
-        return Collections.singletonList(new TrajectorySpec(pos, vel, gravity, drag, cat));
+        return Collections.singletonList(new TrajectorySpec(pos, vel, gravity, drag, type));
     }
 
     private static Vec3 rotateAroundY(Vec3 v, double degrees) {

@@ -19,13 +19,7 @@ import java.util.List;
 /**
  * Renders trajectory trails, landing block outlines, and hit-entity outlines
  * for every active projectile trajectory each frame.
- *
- * Colour rules:
- *   COMBAT hitting mob   → configured "combat hit" colour (default red)
- *   COMBAT hitting block → configured "combat miss" colour (default white)
- *   UTILITY              → configured "utility" colour (default green)
- *
- * Landing block / entity bounding box is always outlined in the same colour.
+ * Trail colour is chosen per projectile type from ModConfig.
  */
 public class TrajectoryRenderer {
 
@@ -50,7 +44,7 @@ public class TrajectoryRenderer {
                     spec.startPos(), spec.startVel(),
                     spec.gravity(), spec.drag()
             );
-            renderResult(context, camPos, result, spec.category());
+            renderResult(context, camPos, result, spec.projectileType());
         }
     }
 
@@ -60,9 +54,9 @@ public class TrajectoryRenderer {
             WorldRenderContext context,
             Vec3 camPos,
             TrajectorySimulator.SimResult result,
-            ProjectileInfo.ProjectileCategory category
+            ProjectileInfo.ProjectileType projectileType
     ) {
-        int[] rgb = pickColor(category, result);
+        int[] rgb = ModConfig.get().colorFor(projectileType);
         int r = rgb[0], g = rgb[1], b = rgb[2];
         ModConfig cfg = ModConfig.get();
 
@@ -108,24 +102,6 @@ public class TrajectoryRenderer {
                     bb.minX - ex, bb.minY - ex, bb.minZ - ex,
                     bb.maxX + ex, bb.maxY + ex, bb.maxZ + ex,
                     r, g, b, cfg.outlineAlpha);
-        }
-    }
-
-    // ── Colour selection ──────────────────────────────────────────────────────
-
-    private static int[] pickColor(
-            ProjectileInfo.ProjectileCategory category,
-            TrajectorySimulator.SimResult result
-    ) {
-        ModConfig cfg = ModConfig.get();
-        if (category == ProjectileInfo.ProjectileCategory.COMBAT) {
-            if (result.hitEntity()) {
-                return new int[]{cfg.combatHitR, cfg.combatHitG, cfg.combatHitB};
-            } else {
-                return new int[]{cfg.combatMissR, cfg.combatMissG, cfg.combatMissB};
-            }
-        } else {
-            return new int[]{cfg.utilityR, cfg.utilityG, cfg.utilityB};
         }
     }
 
