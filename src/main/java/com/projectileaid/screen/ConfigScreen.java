@@ -1,62 +1,64 @@
 package com.projectileaid.screen;
 
 import com.projectileaid.config.ModConfig;
-import com.projectileaid.trajectory.ProjectileInfo.ProjectileType;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * In-game configuration screen for Projectile Aid.
- * Shows one RGB row per projectile type, opened via Fabric Mod Menu.
+ * In-game configuration screen for Projectile Aid, opened via Fabric Mod Menu.
+ *
+ * Layout (two sections):
+ *   ▶ TRAJECTORY PREVIEW VISUALISATION
+ *       Enabled   [ON / OFF]
+ *       Color     [◄] ████ ColorName [►]
+ *       Opacity   [−] 200 [+]
+ *       Style     [Solid / Dashed]
+ *
+ *   ▶ TARGET OUTLINING
+ *       Enabled   [ON / OFF]
+ *       Color     [◄] ████ ColorName [►]
+ *
+ *                       [Done]
  */
 public class ConfigScreen extends Screen {
 
     private final Screen parent;
 
-    private static final int FIELD_W   = 36;
-    private static final int FIELD_H   = 16;
-    private static final int FIELD_GAP = 2;
-    private static final int ROW_H     = 22;
-    private static final int PREVIEW_W = 18;
-    private static final int LABEL_W   = 150;
-    // Total width of one row: label + gap + 3 fields + 2 inner gaps + gap + preview
-    private static final int ROW_CONTENT_W =
-            LABEL_W + 10 + FIELD_W * 3 + FIELD_GAP * 2 + 8 + PREVIEW_W;
+    // Working copies of config values — only written to ModConfig on Done
+    private boolean trajEnabled;
+    private int     trajColorIdx;
+    private int     trajOpacity;
+    private boolean trajDashed;
+    private boolean outlineEnabled;
+    private int     outlineColorIdx;
 
-    private static final ProjectileType[] ROW_TYPES = {
-            ProjectileType.BOW,
-            ProjectileType.CROSSBOW_ARROW,
-            ProjectileType.CROSSBOW_FIREWORK,
-            ProjectileType.TRIDENT,
-            ProjectileType.SNOWBALL,
-            ProjectileType.POTION,
-            ProjectileType.XP_BOTTLE,
-    };
+    // Button references so we can call setMessage() when values change
+    private Button btnTrajEnabled;
+    private Button btnTrajColorPrev;
+    private Button btnTrajColorNext;
+    private Button btnTrajOpacityDown;
+    private Button btnTrajOpacityUp;
+    private Button btnTrajStyle;
+    private Button btnOutlineEnabled;
+    private Button btnOutlineColorPrev;
+    private Button btnOutlineColorNext;
 
-    private static final String[] ROW_LABELS = {
-            "Bow",
-            "Crossbow \u2014 Arrow",
-            "Crossbow \u2014 Firework",
-            "Trident",
-            "Snowball / Egg / Pearl",
-            "Splash / Lingering Potion",
-            "XP Bottle",
-    };
+    // Swatch positions set during init() and used during render()
+    private int trajSwatchX, trajSwatchY;
+    private int outlineSwatchX, outlineSwatchY;
 
-    /** Working copies — rgb[row][0..2] = R, G, B */
-    private final int[][] rgb = new int[ROW_TYPES.length][3];
-
-    /** EditBox widgets — boxes[row][0..2] = R, G, B */
-    private final List<EditBox[]> boxes = new ArrayList<>();
+    // Layout constants
+    private static final int ROW_H       = 24;
+    private static final int BTN_H       = 20;
+    private static final int SWATCH_SIZE = 18;
+    private static final int SWATCH_GAP  = 4;
+    private static final int COLOR_BTN_W = 16;
+    private static final int COLOR_LABEL_W = 60; // space for colour name text
 
     public ConfigScreen(Screen parent) {
-        super(Component.literal("Projectile Aid \u2014 Trail Colours"));
+        super(Component.literal("Projectile Aid \u2014 Configuration"));
         this.parent = parent;
     }
 
@@ -64,70 +66,140 @@ public class ConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        ModConfig cfg = ModConfig.get();
+        // Load working copies
+        ModConfig cfg  = ModConfig.get();
+        trajEnabled    = cfg.trajectoryEnabled;
+        trajColorIdx   = cfg.trajectoryColorIdx;
+        trajOpacity    = cfg.trajectoryOpacity;
+        trajDashed     = cfg.trajectoryDashed;
+        outlineEnabled = cfg.outlineEnabled;
+        outlineColorIdx= cfg.outlineColorIdx;
 
-        for (int i = 0; i < ROW_TYPES.length; i++) {
-            int[] c = cfg.colorFor(ROW_TYPES[i]);
-            rgb[i][0] = c[0];
-            rgb[i][1] = c[1];
-            rgb[i][2] = c[2];
-        }
+        // Layout anchors
+        int cx        = width  / 2;
+        int labelX    = cx - 130;  // left edge of row labels
+        int ctrlX     = cx - 10;   // left edge of control widgets
 
-        boxes.clear();
+        // Section 1 starts here; section 2 is below
+        int sec1Y = height / 2 - 105;
+        int sec2Y = sec1Y + 5 * ROW_H + 18; // 4 rows + gap
 
-        int totalH  = ROW_TYPES.length * ROW_H;
-        int startY  = height / 2 - totalH / 2;
-        int fieldsX = rowStartX() + LABEL_W + 10;
+        // ── Trajectory section ─────────────────────────────────────────────
 
-        for (int row = 0; row < ROW_TYPES.length; row++) {
-            boxes.add(makeRow(fieldsX, startY + row * ROW_H, rgb[row]));
-        }
+        int y = sec1Y + ROW_H; // first row below section header
 
-        int buttonY = startY + totalH + 12;
+        // Enabled
+        btnTrajEnabled = Button.builder(
+                enabledLabel(trajEnabled),
+                b -> { trajEnabled = !trajEnabled; b.setMessage(enabledLabel(trajEnabled)); }
+        ).bounds(ctrlX, y, 80, BTN_H).build();
+        addRenderableWidget(btnTrajEnabled);
+        y += ROW_H;
+
+        // Color ◄ ▶ — swatch drawn in render()
+        trajSwatchX = ctrlX;
+        trajSwatchY = y + 1;
+        btnTrajColorPrev = Button.builder(Component.literal("\u25C4"), b -> {
+            trajColorIdx = (trajColorIdx - 1 + ModConfig.PRESET_COLORS.length) % ModConfig.PRESET_COLORS.length;
+        }).bounds(ctrlX, y, COLOR_BTN_W, BTN_H).build();
+        btnTrajColorNext = Button.builder(Component.literal("\u25BA"), b -> {
+            trajColorIdx = (trajColorIdx + 1) % ModConfig.PRESET_COLORS.length;
+        }).bounds(ctrlX + COLOR_BTN_W + SWATCH_SIZE + SWATCH_GAP * 2 + COLOR_LABEL_W, y, COLOR_BTN_W, BTN_H).build();
+        addRenderableWidget(btnTrajColorPrev);
+        addRenderableWidget(btnTrajColorNext);
+        y += ROW_H;
+
+        // Opacity − +
+        btnTrajOpacityDown = Button.builder(Component.literal("\u2212"), b -> {
+            trajOpacity = ModConfig.clamp(trajOpacity - 10, 10, 255);
+        }).bounds(ctrlX, y, COLOR_BTN_W, BTN_H).build();
+        btnTrajOpacityUp = Button.builder(Component.literal("+"), b -> {
+            trajOpacity = ModConfig.clamp(trajOpacity + 10, 10, 255);
+        }).bounds(ctrlX + COLOR_BTN_W + 36, y, COLOR_BTN_W, BTN_H).build();
+        addRenderableWidget(btnTrajOpacityDown);
+        addRenderableWidget(btnTrajOpacityUp);
+        y += ROW_H;
+
+        // Style
+        btnTrajStyle = Button.builder(
+                styleLabel(trajDashed),
+                b -> { trajDashed = !trajDashed; b.setMessage(styleLabel(trajDashed)); }
+        ).bounds(ctrlX, y, 80, BTN_H).build();
+        addRenderableWidget(btnTrajStyle);
+
+        // ── Target outline section ─────────────────────────────────────────
+
+        y = sec2Y + ROW_H;
+
+        btnOutlineEnabled = Button.builder(
+                enabledLabel(outlineEnabled),
+                b -> { outlineEnabled = !outlineEnabled; b.setMessage(enabledLabel(outlineEnabled)); }
+        ).bounds(ctrlX, y, 80, BTN_H).build();
+        addRenderableWidget(btnOutlineEnabled);
+        y += ROW_H;
+
+        outlineSwatchX = ctrlX;
+        outlineSwatchY = y + 1;
+        btnOutlineColorPrev = Button.builder(Component.literal("\u25C4"), b -> {
+            outlineColorIdx = (outlineColorIdx - 1 + ModConfig.PRESET_COLORS.length) % ModConfig.PRESET_COLORS.length;
+        }).bounds(ctrlX, y, COLOR_BTN_W, BTN_H).build();
+        btnOutlineColorNext = Button.builder(Component.literal("\u25BA"), b -> {
+            outlineColorIdx = (outlineColorIdx + 1) % ModConfig.PRESET_COLORS.length;
+        }).bounds(ctrlX + COLOR_BTN_W + SWATCH_SIZE + SWATCH_GAP * 2 + COLOR_LABEL_W, y, COLOR_BTN_W, BTN_H).build();
+        addRenderableWidget(btnOutlineColorPrev);
+        addRenderableWidget(btnOutlineColorNext);
+
+        // ── Done button ────────────────────────────────────────────────────
+
         addRenderableWidget(Button.builder(
-                Component.literal("Save"),
+                Component.literal("Done"),
                 b -> saveAndClose()
-        ).bounds(width / 2 - 82, buttonY, 80, 20).build());
-
-        addRenderableWidget(Button.builder(
-                Component.literal("Cancel"),
-                b -> onClose()
-        ).bounds(width / 2 + 2, buttonY, 80, 20).build());
+        ).bounds(cx - 40, sec2Y + 3 * ROW_H, 80, BTN_H).build());
     }
 
     @Override
     public void render(GuiGraphics gfx, int mouseX, int mouseY, float delta) {
         renderBackground(gfx, mouseX, mouseY, delta);
 
-        int totalH   = ROW_TYPES.length * ROW_H;
-        int startY   = height / 2 - totalH / 2;
-        int rowStart = rowStartX();
-        int labelX   = rowStart;
-        int fieldsX  = rowStart + LABEL_W + 10;
-        int previewX = fieldsX + FIELD_W * 3 + FIELD_GAP * 2 + 6;
+        int cx     = width  / 2;
+        int labelX = cx - 130;
+        int sec1Y  = height / 2 - 105;
+        int sec2Y  = sec1Y + 5 * ROW_H + 18;
+
+        // ── Section headers ────────────────────────────────────────────────
+        int headerColor = 0xFFFFCC00; // gold
+        gfx.drawString(font, "\u25BA TRAJECTORY PREVIEW VISUALISATION", labelX, sec1Y + 4, headerColor, false);
+        gfx.drawString(font, "\u25BA TARGET OUTLINING",                  labelX, sec2Y + 4, headerColor, false);
 
         // Title
-        gfx.drawCenteredString(font, title, width / 2, startY - 24, 0xFFFFFF);
+        gfx.drawCenteredString(font, title, cx, sec1Y - 18, 0xFFFFFFFF);
 
-        // R / G / B column headers (above first row)
-        String[] chan = {"R", "G", "B"};
-        for (int i = 0; i < 3; i++) {
-            int cx = fieldsX + i * (FIELD_W + FIELD_GAP) + FIELD_W / 2 - font.width(chan[i]) / 2;
-            gfx.drawString(font, chan[i], cx, startY - 12, 0xFF888888, false);
-        }
+        // ── Row labels ─────────────────────────────────────────────────────
+        int rowLabelColor = 0xFFCCCCCC;
+        // Section 1
+        int y = sec1Y + ROW_H;
+        gfx.drawString(font, "Enabled:",  labelX, y + 6, rowLabelColor, false); y += ROW_H;
+        gfx.drawString(font, "Color:",    labelX, y + 6, rowLabelColor, false); y += ROW_H;
+        gfx.drawString(font, "Opacity:",  labelX, y + 6, rowLabelColor, false); y += ROW_H;
+        gfx.drawString(font, "Style:",    labelX, y + 6, rowLabelColor, false);
+        // Section 2
+        y = sec2Y + ROW_H;
+        gfx.drawString(font, "Enabled:",  labelX, y + 6, rowLabelColor, false); y += ROW_H;
+        gfx.drawString(font, "Color:",    labelX, y + 6, rowLabelColor, false);
 
-        for (int i = 0; i < ROW_TYPES.length; i++) {
-            int y = startY + i * ROW_H;
-            int textY = y + (FIELD_H - font.lineHeight) / 2 + 1;
+        // ── Trajectory colour swatch + name ────────────────────────────────
+        renderColorControl(gfx, trajSwatchX, trajSwatchY, trajColorIdx);
 
-            // Row label
-            gfx.drawString(font, ROW_LABELS[i], labelX, textY, 0xFFCCCCCC, false);
+        // ── Trajectory opacity value ────────────────────────────────────────
+        int opY = sec1Y + ROW_H * 3;
+        int opCtrlX = cx - 10;
+        // Value text sits between − and + (each COLOR_BTN_W=16 wide, gap of 4px each side)
+        String opText = String.valueOf(trajOpacity);
+        int textW = font.width(opText);
+        gfx.drawString(font, opText, opCtrlX + COLOR_BTN_W + (36 - textW) / 2, opY + 6, 0xFFFFFFFF, false);
 
-            // Colour preview swatch (live — reflects current EditBox values)
-            int argb = ModConfig.argb(rgb[i][0], rgb[i][1], rgb[i][2], 255);
-            gfx.fill(previewX,     y,         previewX + PREVIEW_W,     y + FIELD_H, 0xFF000000);
-            gfx.fill(previewX + 1, y + 1, previewX + PREVIEW_W - 1, y + FIELD_H - 1, argb);
-        }
+        // ── Outline colour swatch + name ───────────────────────────────────
+        renderColorControl(gfx, outlineSwatchX, outlineSwatchY, outlineColorIdx);
 
         super.render(gfx, mouseX, mouseY, delta);
     }
@@ -139,56 +211,46 @@ public class ConfigScreen extends Screen {
     }
 
     @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
+    public boolean isPauseScreen() { return false; }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** Left edge of the whole row block, centred on screen. */
-    private int rowStartX() {
-        return width / 2 - ROW_CONTENT_W / 2;
+    /**
+     * Draws the colour swatch (between ◄ and ► buttons) and the colour name.
+     * swatchX is the left edge of the ◄ button; the swatch follows immediately after.
+     */
+    private void renderColorControl(GuiGraphics gfx, int swatchX, int swatchY, int colorIdx) {
+        int[] rgb = ModConfig.PRESET_COLORS[colorIdx];
+        int swX = swatchX + COLOR_BTN_W + SWATCH_GAP;
+
+        // Black border then coloured fill
+        gfx.fill(swX,     swatchY,     swX + SWATCH_SIZE,     swatchY + SWATCH_SIZE,     0xFF000000);
+        gfx.fill(swX + 1, swatchY + 1, swX + SWATCH_SIZE - 1, swatchY + SWATCH_SIZE - 1,
+                ModConfig.argb(rgb[0], rgb[1], rgb[2], 255));
+
+        // Colour name
+        int nameX = swX + SWATCH_SIZE + SWATCH_GAP;
+        int nameY = swatchY + (SWATCH_SIZE - font.lineHeight) / 2;
+        gfx.drawString(font, ModConfig.COLOR_NAMES[colorIdx], nameX, nameY, 0xFFFFFFFF, false);
     }
 
-    /** Creates three side-by-side EditBoxes (R, G, B) for one colour row. */
-    private EditBox[] makeRow(int fieldsX, int y, int[] rowRgb) {
-        EditBox[] row = new EditBox[3];
-        for (int i = 0; i < 3; i++) {
-            int x = fieldsX + i * (FIELD_W + FIELD_GAP);
-            final int channel = i;
-            EditBox box = new EditBox(font, x, y, FIELD_W, FIELD_H, Component.empty());
-            box.setMaxLength(3);
-            box.setFilter(s -> s.isEmpty() || (s.matches("\\d+") && Integer.parseInt(s) <= 255));
-            box.setValue(String.valueOf(rowRgb[channel]));
-            box.setResponder(s -> {
-                if (!s.isEmpty() && s.matches("\\d+")) {
-                    rowRgb[channel] = ModConfig.clamp(Integer.parseInt(s));
-                }
-            });
-            addRenderableWidget(box);
-            row[i] = box;
-        }
-        return row;
+    private static Component enabledLabel(boolean enabled) {
+        return Component.literal(enabled ? "ON" : "OFF");
+    }
+
+    private static Component styleLabel(boolean dashed) {
+        return Component.literal(dashed ? "Dashed" : "Solid");
     }
 
     private void saveAndClose() {
-        ModConfig cfg = ModConfig.get();
-        for (int i = 0; i < ROW_TYPES.length; i++) {
-            setColor(cfg, ROW_TYPES[i], rgb[i]);
-        }
+        ModConfig cfg          = ModConfig.get();
+        cfg.trajectoryEnabled  = trajEnabled;
+        cfg.trajectoryColorIdx = trajColorIdx;
+        cfg.trajectoryOpacity  = trajOpacity;
+        cfg.trajectoryDashed   = trajDashed;
+        cfg.outlineEnabled     = outlineEnabled;
+        cfg.outlineColorIdx    = outlineColorIdx;
         ModConfig.save();
         onClose();
-    }
-
-    private void setColor(ModConfig cfg, ProjectileType type, int[] c) {
-        switch (type) {
-            case BOW               -> { cfg.bowR        = c[0]; cfg.bowG        = c[1]; cfg.bowB        = c[2]; }
-            case CROSSBOW_ARROW    -> { cfg.cbArrowR    = c[0]; cfg.cbArrowG    = c[1]; cfg.cbArrowB    = c[2]; }
-            case CROSSBOW_FIREWORK -> { cfg.cbFireworkR = c[0]; cfg.cbFireworkG = c[1]; cfg.cbFireworkB = c[2]; }
-            case TRIDENT           -> { cfg.tridentR    = c[0]; cfg.tridentG    = c[1]; cfg.tridentB    = c[2]; }
-            case SNOWBALL          -> { cfg.snowballR   = c[0]; cfg.snowballG   = c[1]; cfg.snowballB   = c[2]; }
-            case POTION            -> { cfg.potionR     = c[0]; cfg.potionG     = c[1]; cfg.potionB     = c[2]; }
-            case XP_BOTTLE         -> { cfg.xpBottleR   = c[0]; cfg.xpBottleG   = c[1]; cfg.xpBottleB   = c[2]; }
-        }
     }
 }

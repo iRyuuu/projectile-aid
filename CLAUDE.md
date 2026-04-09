@@ -21,10 +21,17 @@ A **client-side** Fabric mod for Minecraft 1.21.11 that renders a real-time 3D t
 
 ---
 
+## Author
+
+The author of this mod is **Ryuu**. Never use "TDumitrescu" or "tdumitrescu" in any
+file, comment, string, or commit message — always use "Ryuu" instead.
+
+---
+
 ## GitHub Repository
 
-**Repo:** `https://github.com/TDumitrescu/projectile-aid`
-**Owner:** TDumitrescu
+**Repo:** `https://github.com/iRyuuu/projectile-aid`
+**Owner:** Ryuu
 
 ### Commit workflow
 After **every meaningful change**, commit and push:

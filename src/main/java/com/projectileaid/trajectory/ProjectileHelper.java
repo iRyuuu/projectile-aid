@@ -16,8 +16,8 @@ import java.util.List;
  * Maps a held ItemStack to one or more TrajectorySpecs to simulate.
  * Returns an empty list if the held item does not launch a projectile.
  *
- * The trail starts from an approximated hand position (slightly right and
- * below the eye) rather than the exact eye/crosshair point.
+ * Trail origins use a yaw-only right vector so the start point is stable
+ * when panning the camera up/down — no jitter.
  *
  * Multishot crossbows return three specs (spread ±10° in the horizontal plane).
  */
@@ -27,9 +27,6 @@ public class ProjectileHelper {
         if (stack.isEmpty()) return Collections.emptyList();
         Item item = stack.getItem();
         Vec3 look = player.getLookAngle();
-        // Use eye position — this is where MC actually spawns all projectile entities,
-        // and is completely stable (no jitter when panning the camera).
-        Vec3 origin = player.getEyePosition();
 
         // ── Bow ───────────────────────────────────────────────────────────────
         if (item instanceof BowItem) {
@@ -41,7 +38,7 @@ public class ProjectileHelper {
             } else {
                 power = 1.0f; // preview at full power when idle
             }
-            return single(origin, look.scale(3.0f * power), 0.05f, 0.99f,
+            return single(bowOrigin(player), look.scale(3.0f * power), 0.05f, 0.99f,
                     ProjectileInfo.ProjectileType.BOW);
         }
 
@@ -50,15 +47,14 @@ public class ProjectileHelper {
             ChargedProjectiles charged = stack.get(DataComponents.CHARGED_PROJECTILES);
             if (charged == null || charged.isEmpty()) return Collections.emptyList();
 
-            // Firework rocket
             if (charged.getItems().stream().anyMatch(s -> s.is(Items.FIREWORK_ROCKET))) {
-                return single(origin, look.scale(1.6f), 0.0f, 0.95f,
+                return single(crossbowOrigin(player), look.scale(1.6f), 0.0f, 0.95f,
                         ProjectileInfo.ProjectileType.CROSSBOW_FIREWORK);
             }
 
-            // Check for Multishot enchantment
             boolean multishot = hasEnchantment(stack, "multishot");
             if (multishot) {
+                Vec3 origin = crossbowOrigin(player);
                 List<TrajectorySpec> specs = new ArrayList<>(3);
                 for (int deg : new int[]{-10, 0, 10}) {
                     specs.add(new TrajectorySpec(
@@ -67,31 +63,37 @@ public class ProjectileHelper {
                 }
                 return specs;
             }
-            return single(origin, look.scale(3.15f), 0.05f, 0.99f,
+            return single(crossbowOrigin(player), look.scale(3.15f), 0.05f, 0.99f,
                     ProjectileInfo.ProjectileType.CROSSBOW_ARROW);
         }
 
         // ── Trident ───────────────────────────────────────────────────────────
         if (stack.is(Items.TRIDENT)) {
-            return single(origin, look.scale(2.5f), 0.05f, 0.99f,
+            return single(tridentOrigin(player), look.scale(2.5f), 0.05f, 0.99f,
                     ProjectileInfo.ProjectileType.TRIDENT);
+        }
+
+        // ── Wind charge ───────────────────────────────────────────────────────
+        if (stack.is(Items.WIND_CHARGE)) {
+            return single(throwableOrigin(player), look.scale(1.5f), 0.0f, 0.99f,
+                    ProjectileInfo.ProjectileType.WIND_CHARGE);
         }
 
         // ── Common throwables ─────────────────────────────────────────────────
         if (stack.is(Items.SNOWBALL) || stack.is(Items.EGG) || stack.is(Items.ENDER_PEARL)) {
-            return single(origin, look.scale(1.5f), 0.03f, 0.99f,
+            return single(throwableOrigin(player), look.scale(1.5f), 0.03f, 0.99f,
                     ProjectileInfo.ProjectileType.SNOWBALL);
         }
 
         // ── Throwable potions ─────────────────────────────────────────────────
         if (stack.is(Items.SPLASH_POTION) || stack.is(Items.LINGERING_POTION)) {
-            return single(origin, look.scale(0.5f), 0.03f, 0.99f,
+            return single(throwableOrigin(player), look.scale(0.5f), 0.03f, 0.99f,
                     ProjectileInfo.ProjectileType.POTION);
         }
 
         // ── Experience bottle ─────────────────────────────────────────────────
         if (stack.is(Items.EXPERIENCE_BOTTLE)) {
-            return single(origin, look.scale(0.7f), 0.03f, 0.99f,
+            return single(throwableOrigin(player), look.scale(0.7f), 0.03f, 0.99f,
                     ProjectileInfo.ProjectileType.XP_BOTTLE);
         }
 
@@ -105,7 +107,90 @@ public class ProjectileHelper {
         return getTrajectories(player.getOffhandItem(), player);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Hand-position origins ─────────────────────────────────────────────────
+    //
+    // All origins use a yaw-only right vector (no pitch component) so the start
+    // point stays stable when the player looks up or down.
+    // The forward component uses the full look direction so the origin correctly
+    // follows aim direction.
+    //
+    // right = (cos(yaw), 0, sin(yaw)) in world space — always horizontal.
+
+    /**
+     * Throwable items (snowball, egg, pearl, wind charge, potions, XP bottle).
+     * The item is held low-right, arm bent: right*0.50, forward*0.10, down*0.30.
+     */
+    private static Vec3 throwableOrigin(LocalPlayer player) {
+        Vec3 eye  = player.getEyePosition();
+        Vec3 look = player.getLookAngle();
+        double[] r = yawRight(player);
+        return new Vec3(
+                eye.x + r[0] * 0.50 + look.x * 0.10,
+                eye.y - 0.30        + look.y * 0.10,
+                eye.z + r[1] * 0.50 + look.z * 0.10
+        );
+    }
+
+    /**
+     * Bow — arrow nocked on the bowstring, arm extended slightly forward.
+     * right*0.30, forward*0.20, down*0.15.
+     */
+    private static Vec3 bowOrigin(LocalPlayer player) {
+        Vec3 eye  = player.getEyePosition();
+        Vec3 look = player.getLookAngle();
+        double[] r = yawRight(player);
+        return new Vec3(
+                eye.x + r[0] * 0.30 + look.x * 0.20,
+                eye.y - 0.15        + look.y * 0.20,
+                eye.z + r[1] * 0.30 + look.z * 0.20
+        );
+    }
+
+    /**
+     * Crossbow — loaded arrow/firework tip, held further forward than bow.
+     * right*0.25, forward*0.30, down*0.15.
+     */
+    private static Vec3 crossbowOrigin(LocalPlayer player) {
+        Vec3 eye  = player.getEyePosition();
+        Vec3 look = player.getLookAngle();
+        double[] r = yawRight(player);
+        return new Vec3(
+                eye.x + r[0] * 0.25 + look.x * 0.30,
+                eye.y - 0.15        + look.y * 0.30,
+                eye.z + r[1] * 0.25 + look.z * 0.30
+        );
+    }
+
+    /**
+     * Trident — tip of trident held out in front.
+     * right*0.40, forward*0.50, down*0.05.
+     */
+    private static Vec3 tridentOrigin(LocalPlayer player) {
+        Vec3 eye  = player.getEyePosition();
+        Vec3 look = player.getLookAngle();
+        double[] r = yawRight(player);
+        return new Vec3(
+                eye.x + r[0] * 0.40 + look.x * 0.50,
+                eye.y - 0.05        + look.y * 0.50,
+                eye.z + r[1] * 0.40 + look.z * 0.50
+        );
+    }
+
+    /**
+     * Returns the player's rightward unit vector in the horizontal plane,
+     * derived from yaw only (not pitch-dependent, so no jitter on camera pan).
+     * result[0] = X component, result[1] = Z component.
+     *
+     * MC yaw: 0° = south (+Z), 90° = west (-X), 180° = north (-Z), -90° = east (+X).
+     * Horizontal right = rotate look 90° CW around Y:
+     *   rightX = cos(yaw), rightZ = sin(yaw).
+     */
+    private static double[] yawRight(LocalPlayer player) {
+        double yawRad = Math.toRadians(player.getYRot());
+        return new double[]{ Math.cos(yawRad), Math.sin(yawRad) };
+    }
+
+    // ── Misc helpers ──────────────────────────────────────────────────────────
 
     private static List<TrajectorySpec> single(
             Vec3 pos, Vec3 vel, float gravity, float drag,
