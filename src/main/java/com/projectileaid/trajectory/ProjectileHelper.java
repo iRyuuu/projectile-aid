@@ -2,6 +2,7 @@ package com.projectileaid.trajectory;
 
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.component.ChargedProjectiles;
 import net.minecraft.resources.Identifier;
@@ -118,61 +119,65 @@ public class ProjectileHelper {
 
     /**
      * Throwable items (snowball, egg, pearl, wind charge, potions, XP bottle).
-     * The item is held low-right, arm bent: right*0.50, forward*0.10, down*0.30.
+     * The item is held low in the main hand: side*0.50, forward*0.10, down*0.30.
      */
     private static Vec3 throwableOrigin(LocalPlayer player) {
         Vec3 eye  = player.getEyePosition();
         Vec3 look = player.getLookAngle();
         double[] r = yawRight(player);
+        double s  = handSign(player);
         return new Vec3(
-                eye.x + r[0] * 0.50 + look.x * 0.10,
-                eye.y - 0.30        + look.y * 0.10,
-                eye.z + r[1] * 0.50 + look.z * 0.10
+                eye.x + r[0] * 0.50 * s + look.x * 0.10,
+                eye.y - 0.30             + look.y * 0.10,
+                eye.z + r[1] * 0.50 * s + look.z * 0.10
         );
     }
 
     /**
      * Bow — arrow nocked on the bowstring, arm extended slightly forward.
-     * right*0.30, forward*0.20, down*0.15.
+     * side*0.30, forward*0.20, down*0.15.
      */
     private static Vec3 bowOrigin(LocalPlayer player) {
         Vec3 eye  = player.getEyePosition();
         Vec3 look = player.getLookAngle();
         double[] r = yawRight(player);
+        double s  = handSign(player);
         return new Vec3(
-                eye.x + r[0] * 0.30 + look.x * 0.20,
-                eye.y - 0.15        + look.y * 0.20,
-                eye.z + r[1] * 0.30 + look.z * 0.20
+                eye.x + r[0] * 0.30 * s + look.x * 0.20,
+                eye.y - 0.15             + look.y * 0.20,
+                eye.z + r[1] * 0.30 * s + look.z * 0.20
         );
     }
 
     /**
      * Crossbow — loaded arrow/firework tip, held further forward than bow.
-     * right*0.25, forward*0.30, down*0.15.
+     * side*0.25, forward*0.30, down*0.15.
      */
     private static Vec3 crossbowOrigin(LocalPlayer player) {
         Vec3 eye  = player.getEyePosition();
         Vec3 look = player.getLookAngle();
         double[] r = yawRight(player);
+        double s  = handSign(player);
         return new Vec3(
-                eye.x + r[0] * 0.25 + look.x * 0.30,
-                eye.y - 0.15        + look.y * 0.30,
-                eye.z + r[1] * 0.25 + look.z * 0.30
+                eye.x + r[0] * 0.25 * s + look.x * 0.30,
+                eye.y - 0.15             + look.y * 0.30,
+                eye.z + r[1] * 0.25 * s + look.z * 0.30
         );
     }
 
     /**
      * Trident — tip of trident held out in front.
-     * right*0.40, forward*0.50, down*0.05.
+     * side*0.40, forward*0.50, down*0.05.
      */
     private static Vec3 tridentOrigin(LocalPlayer player) {
         Vec3 eye  = player.getEyePosition();
         Vec3 look = player.getLookAngle();
         double[] r = yawRight(player);
+        double s  = handSign(player);
         return new Vec3(
-                eye.x + r[0] * 0.40 + look.x * 0.50,
-                eye.y - 0.05        + look.y * 0.50,
-                eye.z + r[1] * 0.40 + look.z * 0.50
+                eye.x + r[0] * 0.40 * s + look.x * 0.50,
+                eye.y - 0.05             + look.y * 0.50,
+                eye.z + r[1] * 0.40 * s + look.z * 0.50
         );
     }
 
@@ -188,6 +193,15 @@ public class ProjectileHelper {
     private static double[] yawRight(LocalPlayer player) {
         double yawRad = Math.toRadians(player.getYRot());
         return new double[]{ Math.cos(yawRad), Math.sin(yawRad) };
+    }
+
+    /**
+     * Returns +1.0 if the player's main hand is RIGHT (default), -1.0 if LEFT.
+     * Multiplying the lateral offset by this sign places the origin on whichever
+     * side of the screen the player's main hand item actually appears.
+     */
+    private static double handSign(LocalPlayer player) {
+        return player.getMainArm() == HumanoidArm.RIGHT ? 1.0 : -1.0;
     }
 
     // ── Misc helpers ──────────────────────────────────────────────────────────
