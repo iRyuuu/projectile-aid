@@ -1,25 +1,31 @@
 package com.projectileaid.render;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.projectileaid.trajectory.ProjectileHelper;
-import com.projectileaid.trajectory.ProjectileInfo;
-import com.projectileaid.trajectory.TrajectorySimulator;
+import com.projectileaid.config.ModConfig;
+import com.projectileaid.trajectory.*;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 
 /**
- * Registers a WorldRenderEvents.END_MAIN callback and draws the trajectory
- * trail using the 1.21.11 submitCustomGeometry API with RenderTypes.LINES.
+ * Renders trajectory trails, landing block outlines, and hit-entity outlines
+ * for every active projectile trajectory each frame.
  *
- * Colour: GREEN = will hit block/entity, RED = falls into void.
- * Alpha fades 85 % → 20 % along the trail length.
+ * Colour rules:
+ *   COMBAT hitting mob   → configured "combat hit" colour (default red)
+ *   COMBAT hitting block → configured "combat miss" colour (default white)
+ *   UTILITY              → configured "utility" colour (default green)
+ *
+ * Landing block / entity bounding box is always outlined in the same colour.
  */
 public class TrajectoryRenderer {
 
@@ -33,26 +39,39 @@ public class TrajectoryRenderer {
         ClientLevel level = mc.level;
         if (player == null || level == null) return;
 
-        // ── Determine held projectile ─────────────────────────────────────────
-        ProjectileInfo info = ProjectileHelper.getActiveProjectileInfo(player);
-        if (info == null) return;
+        List<TrajectorySpec> specs = ProjectileHelper.getActiveTrajectories(player);
+        if (specs.isEmpty()) return;
 
-        // ── Simulate trajectory ───────────────────────────────────────────────
-        Vec3 startPos = player.getEyePosition();
-        Vec3 startVel = player.getLookAngle().scale(info.speed());
-        TrajectorySimulator.SimResult result = TrajectorySimulator.simulate(
-                level, player, startPos, startVel, info.gravity(), info.drag()
-        );
+        Vec3 camPos = mc.gameRenderer.getMainCamera().position();
+
+        for (TrajectorySpec spec : specs) {
+            TrajectorySimulator.SimResult result = TrajectorySimulator.simulate(
+                    level, player,
+                    spec.startPos(), spec.startVel(),
+                    spec.gravity(), spec.drag()
+            );
+            renderResult(context, camPos, result, spec.category());
+        }
+    }
+
+    // ── Routing ───────────────────────────────────────────────────────────────
+
+    private static void renderResult(
+            WorldRenderContext context,
+            Vec3 camPos,
+            TrajectorySimulator.SimResult result,
+            ProjectileInfo.ProjectileCategory category
+    ) {
+        int[] rgb = pickColor(category, result);
+        int r = rgb[0], g = rgb[1], b = rgb[2];
+        ModConfig cfg = ModConfig.get();
 
         List<Vec3> points = result.points();
         if (points.size() < 2) return;
 
-        // Capture values for the lambda (must be effectively final)
-        final boolean hit = result.hitSomething();
         final int totalSegments = points.size() - 1;
-        final Vec3 camPos = mc.gameRenderer.getMainCamera().position();
 
-        // ── Submit custom geometry via the render command queue ───────────────
+        // ── Trail ─────────────────────────────────────────────────────────────
         context.commandQueue().submitCustomGeometry(
                 context.matrices(),
                 RenderTypes.LINES,
@@ -61,44 +80,117 @@ public class TrajectoryRenderer {
                         Vec3 p1 = points.get(i);
                         Vec3 p2 = points.get(i + 1);
 
-                        // Fade alpha 217 (85 %) → 51 (20 %) along the trail
+                        // Fade: full alpha → ~25% toward end of trail
                         float progress = (float) i / totalSegments;
-                        int alpha = (int) (217 - 166 * progress);
+                        int alpha = (int) (cfg.trailAlpha * (1.0f - 0.75f * progress));
 
-                        int r = hit ? 0   : 255;
-                        int g = hit ? 255 : 0;
-
-                        // Camera-relative coordinates
-                        float x1 = (float) (p1.x - camPos.x);
-                        float y1 = (float) (p1.y - camPos.y);
-                        float z1 = (float) (p1.z - camPos.z);
-                        float x2 = (float) (p2.x - camPos.x);
-                        float y2 = (float) (p2.y - camPos.y);
-                        float z2 = (float) (p2.z - camPos.z);
-
-                        // Line segment direction (used as normal)
                         Vec3 dir = p2.subtract(p1).normalize();
-                        float nx = (float) dir.x;
-                        float ny = (float) dir.y;
-                        float nz = (float) dir.z;
+                        float nx = (float) dir.x, ny = (float) dir.y, nz = (float) dir.z;
 
-                        addLineVertex(consumer, pose, x1, y1, z1, r, g, alpha, nx, ny, nz);
-                        addLineVertex(consumer, pose, x2, y2, z2, r, g, alpha, nx, ny, nz);
+                        addVertex(consumer, pose, camPos, p1, r, g, b, alpha, nx, ny, nz);
+                        addVertex(consumer, pose, camPos, p2, r, g, b, alpha, nx, ny, nz);
                     }
+                }
+        );
+
+        // ── Landing outline ───────────────────────────────────────────────────
+        if (result.hitBlock()) {
+            BlockPos bp = result.hitBlockPos();
+            double ex = 0.002; // slight expansion like MC's selection box
+            drawBoxOutline(context, camPos,
+                    bp.getX() - ex, bp.getY() - ex, bp.getZ() - ex,
+                    bp.getX() + 1 + ex, bp.getY() + 1 + ex, bp.getZ() + 1 + ex,
+                    r, g, b, cfg.outlineAlpha);
+        } else if (result.hitEntity()) {
+            AABB bb = result.hitEntityBounds();
+            double ex = 0.05;
+            drawBoxOutline(context, camPos,
+                    bb.minX - ex, bb.minY - ex, bb.minZ - ex,
+                    bb.maxX + ex, bb.maxY + ex, bb.maxZ + ex,
+                    r, g, b, cfg.outlineAlpha);
+        }
+    }
+
+    // ── Colour selection ──────────────────────────────────────────────────────
+
+    private static int[] pickColor(
+            ProjectileInfo.ProjectileCategory category,
+            TrajectorySimulator.SimResult result
+    ) {
+        ModConfig cfg = ModConfig.get();
+        if (category == ProjectileInfo.ProjectileCategory.COMBAT) {
+            if (result.hitEntity()) {
+                return new int[]{cfg.combatHitR, cfg.combatHitG, cfg.combatHitB};
+            } else {
+                return new int[]{cfg.combatMissR, cfg.combatMissG, cfg.combatMissB};
+            }
+        } else {
+            return new int[]{cfg.utilityR, cfg.utilityG, cfg.utilityB};
+        }
+    }
+
+    // ── Box outline ───────────────────────────────────────────────────────────
+
+    private static void drawBoxOutline(
+            WorldRenderContext context,
+            Vec3 camPos,
+            double x1, double y1, double z1,
+            double x2, double y2, double z2,
+            int r, int g, int b, int alpha
+    ) {
+        context.commandQueue().submitCustomGeometry(
+                context.matrices(),
+                RenderTypes.LINES,
+                (pose, consumer) -> {
+                    // Bottom face
+                    addEdge(consumer, pose, camPos, x1,y1,z1, x2,y1,z1, r,g,b,alpha);
+                    addEdge(consumer, pose, camPos, x2,y1,z1, x2,y1,z2, r,g,b,alpha);
+                    addEdge(consumer, pose, camPos, x2,y1,z2, x1,y1,z2, r,g,b,alpha);
+                    addEdge(consumer, pose, camPos, x1,y1,z2, x1,y1,z1, r,g,b,alpha);
+                    // Top face
+                    addEdge(consumer, pose, camPos, x1,y2,z1, x2,y2,z1, r,g,b,alpha);
+                    addEdge(consumer, pose, camPos, x2,y2,z1, x2,y2,z2, r,g,b,alpha);
+                    addEdge(consumer, pose, camPos, x2,y2,z2, x1,y2,z2, r,g,b,alpha);
+                    addEdge(consumer, pose, camPos, x1,y2,z2, x1,y2,z1, r,g,b,alpha);
+                    // Vertical edges
+                    addEdge(consumer, pose, camPos, x1,y1,z1, x1,y2,z1, r,g,b,alpha);
+                    addEdge(consumer, pose, camPos, x2,y1,z1, x2,y2,z1, r,g,b,alpha);
+                    addEdge(consumer, pose, camPos, x2,y1,z2, x2,y2,z2, r,g,b,alpha);
+                    addEdge(consumer, pose, camPos, x1,y1,z2, x1,y2,z2, r,g,b,alpha);
                 }
         );
     }
 
-    private static void addLineVertex(
-            VertexConsumer consumer,
-            com.mojang.blaze3d.vertex.PoseStack.Pose pose,
-            float x, float y, float z,
-            int r, int g, int alpha,
+    // ── Vertex helpers ────────────────────────────────────────────────────────
+
+    private static void addEdge(
+            VertexConsumer consumer, PoseStack.Pose pose, Vec3 cam,
+            double ax, double ay, double az,
+            double bx, double by, double bz,
+            int r, int g, int b, int alpha
+    ) {
+        float nx = (float)(bx - ax), ny = (float)(by - ay), nz = (float)(bz - az);
+        float len = (float) Math.sqrt(nx*nx + ny*ny + nz*nz);
+        if (len > 0) { nx /= len; ny /= len; nz /= len; }
+
+        consumer.addVertex(pose, (float)(ax - cam.x), (float)(ay - cam.y), (float)(az - cam.z))
+                .setColor(r, g, b, alpha).setNormal(pose, nx, ny, nz).setLineWidth(2.0f);
+        consumer.addVertex(pose, (float)(bx - cam.x), (float)(by - cam.y), (float)(bz - cam.z))
+                .setColor(r, g, b, alpha).setNormal(pose, nx, ny, nz).setLineWidth(2.0f);
+    }
+
+    private static void addVertex(
+            VertexConsumer consumer, PoseStack.Pose pose, Vec3 cam,
+            Vec3 pos, int r, int g, int b, int alpha,
             float nx, float ny, float nz
     ) {
-        consumer.addVertex(pose, x, y, z)
-                .setColor(r, g, 0, alpha)
+        consumer.addVertex(pose,
+                        (float)(pos.x - cam.x),
+                        (float)(pos.y - cam.y),
+                        (float)(pos.z - cam.z))
+                .setColor(r, g, b, alpha)
                 .setNormal(pose, nx, ny, nz)
                 .setLineWidth(2.0f);
     }
+
 }

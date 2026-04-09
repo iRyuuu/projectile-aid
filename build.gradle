@@ -10,6 +10,10 @@ base {
     archivesName = project.archives_base_name
 }
 
+repositories {
+    maven { url "https://maven.terraformersmc.com/releases" }
+}
+
 dependencies {
     // Minecraft
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
@@ -19,6 +23,8 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     // Fabric API
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    // ModMenu (optional at runtime — provides the in-game config screen button)
+    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 processResources {

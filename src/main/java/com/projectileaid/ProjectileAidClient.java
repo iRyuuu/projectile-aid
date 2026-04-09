@@ -1,5 +1,6 @@
 package com.projectileaid;
 
+import com.projectileaid.config.ModConfig;
 import com.projectileaid.render.TrajectoryRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import org.slf4j.Logger;
@@ -12,6 +13,7 @@ public class ProjectileAidClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        ModConfig.load();
         TrajectoryRenderer.register();
         LOGGER.info("Projectile Aid initialised.");
     }

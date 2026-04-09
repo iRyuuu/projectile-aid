@@ -1,83 +1,129 @@
 package com.projectileaid.trajectory;
 
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.world.InteractionHand;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.component.ChargedProjectiles;
-import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
- * Maps a held ItemStack to its corresponding ProjectileInfo (physics parameters).
- * Returns null if the item does not fire a projectile.
+ * Maps a held ItemStack to one or more TrajectorySpecs to simulate.
+ * Returns an empty list if the held item does not launch a projectile.
+ *
+ * Multishot crossbows return three specs (spread ±10° in the horizontal plane).
  */
 public class ProjectileHelper {
 
-    /**
-     * Returns physics info for the projectile that would be fired from {@code stack},
-     * or null if this item is not a projectile launcher.
-     */
-    public static ProjectileInfo getProjectileInfo(ItemStack stack, LocalPlayer player) {
-        if (stack.isEmpty()) return null;
+    public static List<TrajectorySpec> getTrajectories(ItemStack stack, LocalPlayer player) {
+        if (stack.isEmpty()) return Collections.emptyList();
         Item item = stack.getItem();
+        Vec3 startPos = player.getEyePosition();
+        Vec3 look = player.getLookAngle();
 
-        // ── Bow ──────────────────────────────────────────────────────────────────
+        // ── Bow ───────────────────────────────────────────────────────────────
         if (item instanceof BowItem) {
             float power;
             if (player.isUsingItem()) {
                 int chargeTime = 72000 - player.getUseItemRemainingTicks();
                 power = BowItem.getPowerForTime(chargeTime);
-                if (power < 0.05f) power = 0.05f; // small minimum so trail is visible
+                if (power < 0.05f) power = 0.05f;
             } else {
-                power = 1.0f; // show full-power preview when not drawing
+                power = 1.0f; // preview at full power when idle
             }
-            return new ProjectileInfo(3.0f * power, 0.05f, 0.99f);
+            return single(startPos, look.scale(3.0f * power), 0.05f, 0.99f,
+                    ProjectileInfo.ProjectileCategory.COMBAT);
         }
 
-        // ── Crossbow ─────────────────────────────────────────────────────────────
+        // ── Crossbow ──────────────────────────────────────────────────────────
         if (item instanceof CrossbowItem) {
             ChargedProjectiles charged = stack.get(DataComponents.CHARGED_PROJECTILES);
-            if (charged == null || charged.isEmpty()) return null;
+            if (charged == null || charged.isEmpty()) return Collections.emptyList();
 
-            boolean hasFirework = charged.getItems().stream()
-                    .anyMatch(s -> s.is(Items.FIREWORK_ROCKET));
-            if (hasFirework) {
-                // Fireworks have thrust and minimal gravity
-                return new ProjectileInfo(1.6f, 0.0f, 0.95f);
+            // Firework rocket
+            if (charged.getItems().stream().anyMatch(s -> s.is(Items.FIREWORK_ROCKET))) {
+                return single(startPos, look.scale(1.6f), 0.0f, 0.95f,
+                        ProjectileInfo.ProjectileCategory.COMBAT);
             }
-            return new ProjectileInfo(3.15f, 0.05f, 0.99f);
+
+            // Check for Multishot enchantment
+            boolean multishot = hasEnchantment(stack, "multishot");
+            if (multishot) {
+                List<TrajectorySpec> specs = new ArrayList<>(3);
+                for (int deg : new int[]{-10, 0, 10}) {
+                    specs.add(new TrajectorySpec(
+                            startPos, rotateAroundY(look, deg).scale(3.15f),
+                            0.05f, 0.99f, ProjectileInfo.ProjectileCategory.COMBAT));
+                }
+                return specs;
+            }
+            return single(startPos, look.scale(3.15f), 0.05f, 0.99f,
+                    ProjectileInfo.ProjectileCategory.COMBAT);
         }
 
-        // ── Common throwables ─────────────────────────────────────────────────────
-        if (stack.is(Items.SNOWBALL) || stack.is(Items.EGG) || stack.is(Items.ENDER_PEARL)) {
-            return new ProjectileInfo(1.5f, 0.03f, 0.99f);
-        }
-
-        // ── Throwable potions ─────────────────────────────────────────────────────
-        if (stack.is(Items.SPLASH_POTION) || stack.is(Items.LINGERING_POTION)) {
-            return new ProjectileInfo(0.5f, 0.03f, 0.99f);
-        }
-
-        // ── Experience bottle ─────────────────────────────────────────────────────
-        if (stack.is(Items.EXPERIENCE_BOTTLE)) {
-            return new ProjectileInfo(0.7f, 0.03f, 0.99f);
-        }
-
-        // ── Trident ───────────────────────────────────────────────────────────────
+        // ── Trident ───────────────────────────────────────────────────────────
         if (stack.is(Items.TRIDENT)) {
-            // Trident is thrown at ~2.5 speed (similar to a strong arm throw)
-            return new ProjectileInfo(2.5f, 0.05f, 0.99f);
+            return single(startPos, look.scale(2.5f), 0.05f, 0.99f,
+                    ProjectileInfo.ProjectileCategory.COMBAT);
         }
 
-        return null;
+        // ── Common throwables ─────────────────────────────────────────────────
+        if (stack.is(Items.SNOWBALL) || stack.is(Items.EGG) || stack.is(Items.ENDER_PEARL)) {
+            return single(startPos, look.scale(1.5f), 0.03f, 0.99f,
+                    ProjectileInfo.ProjectileCategory.UTILITY);
+        }
+
+        // ── Throwable potions ─────────────────────────────────────────────────
+        if (stack.is(Items.SPLASH_POTION) || stack.is(Items.LINGERING_POTION)) {
+            return single(startPos, look.scale(0.5f), 0.03f, 0.99f,
+                    ProjectileInfo.ProjectileCategory.UTILITY);
+        }
+
+        // ── Experience bottle ─────────────────────────────────────────────────
+        if (stack.is(Items.EXPERIENCE_BOTTLE)) {
+            return single(startPos, look.scale(0.7f), 0.03f, 0.99f,
+                    ProjectileInfo.ProjectileCategory.UTILITY);
+        }
+
+        return Collections.emptyList();
     }
 
-    /**
-     * Checks both hands and returns the first ProjectileInfo found.
-     * Main hand takes priority.
-     */
-    public static ProjectileInfo getActiveProjectileInfo(LocalPlayer player) {
-        ProjectileInfo info = getProjectileInfo(player.getMainHandItem(), player);
-        if (info != null) return info;
-        return getProjectileInfo(player.getOffhandItem(), player);
+    /** Checks both hands; main hand takes priority. */
+    public static List<TrajectorySpec> getActiveTrajectories(LocalPlayer player) {
+        List<TrajectorySpec> specs = getTrajectories(player.getMainHandItem(), player);
+        if (!specs.isEmpty()) return specs;
+        return getTrajectories(player.getOffhandItem(), player);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static List<TrajectorySpec> single(
+            Vec3 pos, Vec3 vel, float gravity, float drag,
+            ProjectileInfo.ProjectileCategory cat
+    ) {
+        return Collections.singletonList(new TrajectorySpec(pos, vel, gravity, drag, cat));
+    }
+
+    private static Vec3 rotateAroundY(Vec3 v, double degrees) {
+        double rad = Math.toRadians(degrees);
+        double cos = Math.cos(rad), sin = Math.sin(rad);
+        return new Vec3(v.x * cos + v.z * sin, v.y, -v.x * sin + v.z * cos);
+    }
+
+    private static boolean hasEnchantment(ItemStack stack, String pathName) {
+        ItemEnchantments enchants = stack.get(DataComponents.ENCHANTMENTS);
+        if (enchants == null) return false;
+        for (var entry : enchants.entrySet()) {
+            if (entry.getKey().unwrapKey()
+                    .map(k -> k.location().getPath().equals(pathName))
+                    .orElse(false)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

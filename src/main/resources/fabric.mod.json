@@ -8,18 +8,24 @@
     "TDumitrescu"
   ],
   "contact": {
-    "sources": "https://github.com/TDumitrescu/projectile-aid"
+    "sources": "https://github.com/iRyuuu/projectile-aid"
   },
   "license": "MIT",
   "environment": "client",
   "entrypoints": {
     "client": [
       "com.projectileaid.ProjectileAidClient"
+    ],
+    "modmenu": [
+      "com.projectileaid.ProjectileAidModMenu"
     ]
   },
   "depends": {
     "fabricloader": ">=0.18.1",
     "fabric-api": "*",
     "minecraft": "~1.21.11"
+  },
+  "suggests": {
+    "modmenu": "*"
   }
 }
