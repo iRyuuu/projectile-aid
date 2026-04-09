@@ -24,7 +24,7 @@ dependencies {
     // Fabric API
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
     // ModMenu — config screen integration
-    modCompileOnly "com.terraformersmc:modmenu:17.0.0"
+    modCompileOnly "com.terraformersmc:modmenu:${modmenu_version}"
 }
 
 processResources {

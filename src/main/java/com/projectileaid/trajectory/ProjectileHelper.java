@@ -27,7 +27,9 @@ public class ProjectileHelper {
         if (stack.isEmpty()) return Collections.emptyList();
         Item item = stack.getItem();
         Vec3 look = player.getLookAngle();
-        Vec3 handPos = handPosition(player, look);
+        // Use eye position — this is where MC actually spawns all projectile entities,
+        // and is completely stable (no jitter when panning the camera).
+        Vec3 origin = player.getEyePosition();
 
         // ── Bow ───────────────────────────────────────────────────────────────
         if (item instanceof BowItem) {
@@ -39,7 +41,7 @@ public class ProjectileHelper {
             } else {
                 power = 1.0f; // preview at full power when idle
             }
-            return single(handPos, look.scale(3.0f * power), 0.05f, 0.99f,
+            return single(origin, look.scale(3.0f * power), 0.05f, 0.99f,
                     ProjectileInfo.ProjectileType.BOW);
         }
 
@@ -50,7 +52,7 @@ public class ProjectileHelper {
 
             // Firework rocket
             if (charged.getItems().stream().anyMatch(s -> s.is(Items.FIREWORK_ROCKET))) {
-                return single(handPos, look.scale(1.6f), 0.0f, 0.95f,
+                return single(origin, look.scale(1.6f), 0.0f, 0.95f,
                         ProjectileInfo.ProjectileType.CROSSBOW_FIREWORK);
             }
 
@@ -60,36 +62,36 @@ public class ProjectileHelper {
                 List<TrajectorySpec> specs = new ArrayList<>(3);
                 for (int deg : new int[]{-10, 0, 10}) {
                     specs.add(new TrajectorySpec(
-                            handPos, rotateAroundY(look, deg).scale(3.15f),
+                            origin, rotateAroundY(look, deg).scale(3.15f),
                             0.05f, 0.99f, ProjectileInfo.ProjectileType.CROSSBOW_ARROW));
                 }
                 return specs;
             }
-            return single(handPos, look.scale(3.15f), 0.05f, 0.99f,
+            return single(origin, look.scale(3.15f), 0.05f, 0.99f,
                     ProjectileInfo.ProjectileType.CROSSBOW_ARROW);
         }
 
         // ── Trident ───────────────────────────────────────────────────────────
         if (stack.is(Items.TRIDENT)) {
-            return single(handPos, look.scale(2.5f), 0.05f, 0.99f,
+            return single(origin, look.scale(2.5f), 0.05f, 0.99f,
                     ProjectileInfo.ProjectileType.TRIDENT);
         }
 
         // ── Common throwables ─────────────────────────────────────────────────
         if (stack.is(Items.SNOWBALL) || stack.is(Items.EGG) || stack.is(Items.ENDER_PEARL)) {
-            return single(handPos, look.scale(1.5f), 0.03f, 0.99f,
+            return single(origin, look.scale(1.5f), 0.03f, 0.99f,
                     ProjectileInfo.ProjectileType.SNOWBALL);
         }
 
         // ── Throwable potions ─────────────────────────────────────────────────
         if (stack.is(Items.SPLASH_POTION) || stack.is(Items.LINGERING_POTION)) {
-            return single(handPos, look.scale(0.5f), 0.03f, 0.99f,
+            return single(origin, look.scale(0.5f), 0.03f, 0.99f,
                     ProjectileInfo.ProjectileType.POTION);
         }
 
         // ── Experience bottle ─────────────────────────────────────────────────
         if (stack.is(Items.EXPERIENCE_BOTTLE)) {
-            return single(handPos, look.scale(0.7f), 0.03f, 0.99f,
+            return single(origin, look.scale(0.7f), 0.03f, 0.99f,
                     ProjectileInfo.ProjectileType.XP_BOTTLE);
         }
 
@@ -104,24 +106,6 @@ public class ProjectileHelper {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /**
-     * Approximates the world-space position of the player's right hand.
-     * Offset: ~0.35 blocks to the right of look direction, ~0.4 blocks below eye.
-     */
-    private static Vec3 handPosition(LocalPlayer player, Vec3 look) {
-        Vec3 eye = player.getEyePosition();
-        // Horizontal right-perpendicular to look direction
-        double rightX = -look.z;
-        double rightZ = look.x;
-        double len = Math.sqrt(rightX * rightX + rightZ * rightZ);
-        if (len > 1e-6) { rightX /= len; rightZ /= len; }
-        return new Vec3(
-                eye.x + rightX * 0.35,
-                eye.y - 0.4,
-                eye.z + rightZ * 0.35
-        );
-    }
 
     private static List<TrajectorySpec> single(
             Vec3 pos, Vec3 vel, float gravity, float drag,
