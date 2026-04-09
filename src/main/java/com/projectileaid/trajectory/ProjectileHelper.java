@@ -4,7 +4,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.component.ChargedProjectiles;
-import net.minecraft.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.phys.Vec3;
 
@@ -118,7 +118,7 @@ public class ProjectileHelper {
     private static boolean hasEnchantment(ItemStack stack, String pathName) {
         ItemEnchantments enchants = stack.get(DataComponents.ENCHANTMENTS);
         if (enchants == null) return false;
-        ResourceLocation target = ResourceLocation.withDefaultNamespace(pathName);
+        Identifier target = Identifier.withDefaultNamespace(pathName);
         for (var entry : enchants.entrySet()) {
             if (entry.getKey().is(target)) return true;
         }
