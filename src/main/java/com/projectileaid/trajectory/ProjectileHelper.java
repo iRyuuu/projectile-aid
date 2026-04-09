@@ -119,8 +119,8 @@ public class ProjectileHelper {
         if (enchants == null) return false;
         for (var entry : enchants.entrySet()) {
             if (entry.getKey().unwrapKey()
-                    .map(k -> k.location().getPath().equals(pathName))
-                    .orElse(false)) {
+                    .filter(k -> k.getValue().getPath().equals(pathName))
+                    .isPresent()) {
                 return true;
             }
         }
